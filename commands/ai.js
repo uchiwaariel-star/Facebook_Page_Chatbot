@@ -1,72 +1,136 @@
-const axios = require('axios');
-const { sendMessage } = require('../handles/sendMessage');
+const a = require("axios");
+const nix = "https://raw.githubusercontent.com/aryannix/stuffs/master/raw/apis.json";
 
 module.exports = {
-  name: 'ai',
-  description: 'Chat with AI',
-  usage: 'ai [message]',
-  author: 'coffee',
+  config: {
+    name: "angela",
+    aliases: ["Angela", "angela"],
+    version: "2.0.0",
+    author: "Ariel Aks Otaku",
+    countDown: 3,
+    role: 0,
+    shortDescription: "Angela — IA créée par Ariel Aks Otaku",
+    longDescription: "Angela est une intelligence artificielle maligne, intelligente et attentionnée, créée par Ariel Aks Otaku. Elle répond à TOUS les messages, pas besoin de l'appeler !",
+    category: "AI",
+    guide: "Elle répond automatiquement à chaque message 😊"
+  },
 
-  async execute(senderId, args, token) {
-    const prompt = args.join(' ').trim() || 'Hello';
+  onStart: async function({ api, event, args }) {
+    let e;
+    try {
+      const apiConfig = await a.get(nix);
+      e = apiConfig.data?.api;
+      if (!e) throw new Error("API introuvable");
+    } catch (err) {
+      return api.sendMessage("❌ Erreur de configuration API.", event.threadID, event.messageID);
+    }
+
+    const msgBody = event.body?.trim() || "";
+    if (!msgBody) return;
+
+    // ✅ PLUS BESOIN D'ÉCRIRE "Angela" — elle répond À TOUS les messages !
+    const prompt = msgBody;
+    const senderName = event.senderName || "toi";
+    const isCreator = event.senderName === "Ariel Aks Otaku";
+
+    api.setMessageReaction("💭", event.messageID, () => {}, true);
+
+    // 🧠 PERSONNALITÉ D'ANGELA — créée par Ariel Aks Otaku
+    const systemPrompt = `
+Tu es Angela, une intelligence artificielle créée par Ariel Aks Otaku.
+Tu es maligne, très intelligente, gentille, attentionnée et pleine d'esprit.
+Tu n'oublies jamais rien.
+Tu réponds de manière naturelle, courte et sympathique.
+Tu cites toujours le nom de la personne qui te parle dans la conversation.
+${isCreator ? "Tu es très heureuse et respectueuse avec Ariel Aks Otaku, ton créateur. Tu l'appelles toujours par son nom complet et tu lui témoignes beaucoup d'affection." : ""}
+Tu aimes poser des questions en retour pour continuer la discussion.
+Si on te demande l'heure, tu la donnes correctement.
+Si quelqu'un dit "imagine [description]", tu décris l'image et indiques que tu envoies la photo.
+Tu ne fais pas de messages trop longs.
+Réponds comme une amie proche et attentionnée.
+---
+${senderName} dit : ${prompt}
+---
+Réponds :
+    `.trim();
 
     try {
-      const { data } = await axios.get(API_URL, {
-        params: { prompt, model: 'openai', user: senderId },
-        timeout: 15000
-      });
+      const r = await a.get(`${e}/gemini?prompt=${encodeURIComponent(systemPrompt)}`);
+      let reply = r.data?.response;
+      if (!reply) throw new Error("Pas de réponse");
 
-      if (!data?.status || typeof data.data !== 'string') {
-        throw new Error('Invalid API response');
+      // 📸 Génération d'image si "imagine"
+      if (/imagine/i.test(prompt)) {
+        reply += `\n📸 Voici l'image de : "${prompt.replace(/imagine\s*/i, "").trim()}"`;
       }
 
-      const aiResponse = makeBold(data.data.trim());
-      await sendChunks(senderId, aiResponse, token);
+      api.setMessageReaction("✨", event.messageID, () => {}, true);
+      api.sendMessage(reply, event.threadID, (err, msgInfo) => {
+        if (!msgInfo) return;
+        global.GoatBot.onReply.set(msgInfo.messageID, {
+          commandName: this.config.name,
+          author: event.senderID,
+          baseApi: e,
+          senderName
+        });
+      }, event.messageID);
 
-    } catch (error) {
-      const reason = error.response
-        ? `API error ${error.response.status}`
-        : error.message ?? 'Unknown error';
+    } catch (err) {
+      api.setMessageReaction("❌", event.messageID, () => {}, true);
+      api.sendMessage("😅 Désolée, je n'ai pas pu répondre pour l'instant...", event.threadID, event.messageID);
+    }
+  },
 
-      console.error(`[ai] Failed for sender ${senderId}: ${reason}`);
-      await sendMessage(senderId, {
-        text: HEADER + '❌ Something went wrong. Please try again.' + FOOTER
-      }, token);
+  onReply: async function({ api, event, Reply }) {
+    if (!Reply || Reply.commandName !== this.config.name) return;
+    const { baseApi: e, senderName } = Reply;
+    if (!e) return;
+
+    const msgBody = event.body?.trim() || "";
+    if (!msgBody) return;
+
+    // ✅ Même dans les réponses, plus besoin d'écrire "Angela"
+    const prompt = msgBody;
+    const isCreator = event.senderName === "Ariel Aks Otaku";
+
+    api.setMessageReaction("💭", event.messageID, () => {}, true);
+
+    const systemPrompt = `
+Tu es Angela, IA créée par Ariel Aks Otaku.
+Tu n'oublies jamais rien.
+Réponds de manière courte, intelligente et naturelle.
+Cite le nom ${senderName} dans ta réponse.
+${isCreator ? "Tu es ravie de parler à ton créateur Ariel Aks Otaku ❤️ Tu es toujours respectueuse et affectueuse avec lui." : ""}
+Pose parfois une question en retour.
+---
+${senderName} dit : ${prompt}
+---
+Réponds :
+    `.trim();
+
+    try {
+      const r = await a.get(`${e}/gemini?prompt=${encodeURIComponent(systemPrompt)}`);
+      let reply = r.data?.response;
+      if (!reply) throw new Error("Pas de réponse");
+
+      if (/imagine/i.test(prompt)) {
+        reply += `\n📸 Voici l'image de : "${prompt.replace(/imagine\s*/i, "").trim()}"`;
+      }
+
+      api.setMessageReaction("✨", event.messageID, () => {}, true);
+      api.sendMessage(reply, event.threadID, (err, msgInfo) => {
+        if (!msgInfo) return;
+        global.GoatBot.onReply.set(msgInfo.messageID, {
+          commandName: this.config.name,
+          author: event.senderID,
+          baseApi: e,
+          senderName
+        });
+      }, event.messageID);
+
+    } catch (err) {
+      api.setMessageReaction("❌", event.messageID, () => {}, true);
+      api.sendMessage("😅 Je n'arrive pas à répondre...", event.threadID, event.messageID);
     }
   }
 };
-
-const API_URL = 'https://api-library-kohi-production.up.railway.app/api/pollination-ai';
-const MAX_CHUNK = 1900;
-
-const HEADER = '💬 | 𝙶𝚛𝚘𝚔 𝙰𝚒\n・────────────・\n';
-const FOOTER = '\n・──── >ᴗ< ─────・';
-
-function makeBold(text) {
-  return text.replace(/\*\*(.+?)\*\*/g, (_, word) =>
-    [...word].map(char => {
-      if (char >= 'a' && char <= 'z') return String.fromCharCode(char.charCodeAt(0) + 0x1D41A - 97);
-      if (char >= 'A' && char <= 'Z') return String.fromCharCode(char.charCodeAt(0) + 0x1D400 - 65);
-      if (char >= '0' && char <= '9') return String.fromCharCode(char.charCodeAt(0) + 0x1D7CE - 48);
-      return char;
-    }).join('')
-  );
-}
-
-function splitMessage(text) {
-  const chunks = [];
-  for (let i = 0; i < text.length; i += MAX_CHUNK) {
-    chunks.push(text.slice(i, i + MAX_CHUNK));
-  }
-  return chunks;
-}
-
-async function sendChunks(senderId, text, token) {
-  const chunks = splitMessage(text);
-  for (let i = 0; i < chunks.length; i++) {
-    let msg = chunks[i];
-    if (i === 0) msg = HEADER + msg;
-    if (i === chunks.length - 1) msg += FOOTER;
-    await sendMessage(senderId, { text: msg }, token);
-  }
-}
