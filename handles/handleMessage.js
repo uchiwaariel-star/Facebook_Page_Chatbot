@@ -1,81 +1,45 @@
-const fs = require('fs');
-const path = require('path');
-const { sendMessage } = require('./sendMessage');
+const angelaCmd = require('../commands/angela');
+const helpCmd = require('../commands/help');
 
-const commands = new Map();
-const imageCache = new Map();
-const prefix = '-';
-const CACHE_TTL = 10 * 60 * 1000; 
+// Liste des commandes existantes
+const commands = {
+  help: helpCmd,
+  angela: angelaCmd,
+  ai: angelaCmd,
+  chat: angelaCmd
+};
 
-// Load commands on startup
-const loadCommands = () => {
-  const commandsDir = path.join(__dirname, '../commands');
-  
-  for (const file of fs.readdirSync(commandsDir).filter(f => f.endsWith('.js'))) {
-    delete require.cache[require.resolve(`../commands/${file}`)]; // Hot reload
-    const command = require(`../commands/${file}`);
-    
-    const names = Array.isArray(command.name) ? command.name : [command.name];
-    names.forEach(name => {
-      if (typeof name === 'string') {
-        commands.set(name.toLowerCase(), command);
-      }
+module.exports = async function handleMessage(event, pageAccessToken) {
+  const senderId = event.sender.id;
+  const messageText = event.message?.text?.trim() || '';
+
+  // 📨 Fonction d'envoi de message
+  const sendMessage = (id, message) => {
+    return fetch(`https://graph.facebook.com/v23.0/${id}/messages?access_token=${encodeURIComponent(pageAccessToken)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipient: { id },
+        message
+      })
     });
+  };
+
+  // 🔍 Détecter si c'est une commande
+  const lowerText = messageText.toLowerCase();
+  let cmdFound = false;
+
+  for (const [cmdName, cmdModule] of Object.entries(commands)) {
+    if (lowerText.startsWith(cmdName + ' ') || lowerText === cmdName) {
+      cmdFound = true;
+      const args = messageText.slice(cmdName.length).trim();
+      await cmdModule.execute(senderId, args, pageAccessToken, sendMessage);
+      break;
+    }
+  }
+
+  // 🤖 SI PAS DE COMMANDE → ANGELA RÉPOND AUTOMATIQUEMENT !
+  if (!cmdFound && !event.message.is_echo) {
+    await angelaCmd.execute(senderId, messageText, pageAccessToken, sendMessage);
   }
 };
-
-loadCommands();
-
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, value] of imageCache) {
-    if (now - value.timestamp > CACHE_TTL) {
-      imageCache.delete(key);
-    }
-  }
-}, CACHE_TTL);
-
-const handleMessage = async (event, pageAccessToken) => {
-  const senderId = event?.sender?.id;
-  if (!senderId) return;
-  
-  const messageText = event?.message?.text?.trim();
-  const attachments = event?.message?.attachments || [];
-  
-  // Cache images
-  for (const attachment of attachments) {
-    if (attachment.type === 'image' && attachment.payload?.url) {
-      imageCache.set(senderId, {
-        url: attachment.payload.url,
-        timestamp: Date.now()
-      });
-    }
-  }
-  
-  if (!messageText) return;
-  
-  const isCommand = messageText.startsWith(prefix);
-  const [commandName, ...args] = isCommand 
-    ? messageText.slice(prefix.length).split(' ')
-    : messageText.split(' ');
-  
-  const normalizedCommand = commandName.toLowerCase();
-  
-  try {
-    const command = commands.get(normalizedCommand);
-    
-    if (command) {
-      await command.execute(senderId, args, pageAccessToken, event, sendMessage, imageCache);
-    } else if (commands.has('ai')) {
-
-      await commands.get('ai').execute(senderId, [messageText], pageAccessToken, event, sendMessage, imageCache);
-    } else {
-      await sendMessage(senderId, { text: 'Unknown command. Type "help" for available commands.' }, pageAccessToken);
-    }
-  } catch (error) {
-    console.error('Command execution error:', error.message);
-    await sendMessage(senderId, { text: '❌ Command execution failed.' }, pageAccessToken);
-  }
-};
-
-module.exports = { handleMessage };
