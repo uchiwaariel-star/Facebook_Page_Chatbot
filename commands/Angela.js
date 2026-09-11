@@ -1,36 +1,34 @@
-const { callGeminiAPI } = require('../utils/callGeminiAPI');
+const axios = require('axios');
 
 module.exports = {
-  name: 'gemini',
-  description: 'Ask a question to the Gemini AI',
-  author: 'ChatGPT',
+  name: 'angela',
+  aliases: ['ai', 'chat', 'gpt'],
+  description: 'Discuter avec Angela — Intelligence Artificielle',
+  author: 'Ariel Aks Otaku',
   async execute(senderId, args, pageAccessToken, sendMessage) {
     const prompt = args.join(' ');
-    try {
-      sendMessage(senderId, { text: 'Please wait, I am processing your request...' }, pageAccessToken);
-      const response = await callGeminiAPI(prompt);
+    
+    if (!prompt) {
+      return sendMessage(senderId, { 
+        text: "🤖 Bonjour ! Je suis Angela, créée par Ariel Aks Otaku.\nPose-moi une question ou parle-moi ! 😊" 
+      }, pageAccessToken);
+    }
 
-      // Split the response into chunks if it exceeds 2000 characters
-      const maxMessageLength = 2000;
-      if (response.length > maxMessageLength) {
-        const messages = splitMessageIntoChunks(response, maxMessageLength);
-        for (const message of messages) {
-          sendMessage(senderId, { text: message }, pageAccessToken);
-        }
-      } else {
-        sendMessage(senderId, { text: response }, pageAccessToken);
-      }
+    try {
+      // ✅ NOUVELLE API — gratuite et fonctionnelle
+      const apiUrl = `https://delfaapiai.vercel.app/ai/chatgptfree?q=${encodeURIComponent(prompt)}`;
+      const response = await axios.get(apiUrl, { timeout: 15000 });
+      
+      // Récupérer la réponse (selon format de l'API)
+      const reponse = response.data.reponse || response.data.message || response.data.result || JSON.stringify(response.data);
+      
+      sendMessage(senderId, { text: `🤖 Angela :\n${reponse}` }, pageAccessToken);
+      
     } catch (error) {
-      console.error('Error calling Gemini API:', error);
-      sendMessage(senderId, { text: 'Sorry, there was an error processing your request.' }, pageAccessToken);
+      console.error('Erreur API :', error.message);
+      sendMessage(senderId, { 
+        text: "😅 Désolée, j'ai un petit problème de connexion... Réessaie dans un instant ! 🙏" 
+      }, pageAccessToken);
     }
   }
 };
-
-function splitMessageIntoChunks(message, chunkSize) {
-  const chunks = [];
-  for (let i = 0; i < message.length; i += chunkSize) {
-    chunks.push(message.slice(i, i + chunkSize));
-  }
-  return chunks;
-}
